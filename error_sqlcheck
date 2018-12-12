@@ -1,0 +1,255 @@
+from burp import IBurpExtender
+from burp import IHttpListener
+from burp import IHttpRequestResponse
+from burp import IResponseInfo
+from burp import IRequestInfo
+from burp import IProxyListener
+from burp import IHttpService
+import re
+
+print 'this  extender by  jkwolf18 '
+class BurpExtender(IBurpExtender, IHttpListener):
+    def registerExtenderCallbacks(self, callbacks):    
+        self._callbacks = callbacks
+        self._helpers = callbacks.getHelpers()
+        self._callbacks.setExtensionName("jkwolf18")
+        callbacks.registerHttpListener(self)
+        
+    def processHttpMessage(self, toolFlag, messageIsRequest, messageInfo):
+        
+        if  toolFlag == 8 or toolFlag == 4: #if tool is Proxy Tab or repeater
+            if not messageIsRequest:#only handle responses
+            
+                #old response init
+                response = messageInfo.getResponse()
+                analyzedResponse = self._helpers.analyzeResponse(response) # returns IResponseInfo
+                response_headers = analyzedResponse.getHeaders()
+                response_bodys = response[analyzedResponse.getBodyOffset():].tostring()
+                response_StatusCode = analyzedResponse.getStatusCode()
+                
+                #old request init 
+                resquest = messageInfo.getRequest()
+                analyzedRequest = self._helpers.analyzeResponse(resquest)
+                request_header = analyzedRequest.getHeaders()
+                request_bodys = resquest[analyzedRequest.getBodyOffset():].tostring()
+                
+                #fuwu ini
+                httpService = messageInfo.getHttpService()
+                port = httpService.getPort()
+                host = httpService.getHost()
+                Protocol = httpService.getProtocol()
+                
+                ishttps = False
+                new_header=request_header
+                new_body=request_bodys
+                #POST Body has result
+                
+                #IBM DB2
+                ibm_error="DB2 SQL error"
+                ibm_error1="ibm.db.DataException"
+                
+                #Microsoft Access
+                access_error="Microsoft Access Driver"
+                access_error1="JET Database Engine"
+                access_error2="Access Database Engine"
+                
+                #PostgreSQL
+                #psql_error="valid PostgreSQL result"
+                psql_error="PostgreSQL"
+                
+                #sqlite
+                sqlite_error="SQLite/JDBCDriver"
+                sqlite_error1="SQLite.Exception"
+                sqlite_error2="System.Data.SQLite.SQLiteException"
+                sqlite_error3="SQLITE_ERROR"
+                
+                
+                if request_bodys.count("=")!=0 :      #has post + body + get
+                    if new_header[0].count("=") != 0 :
+                        #print 'post + body + get'
+                        new_body="&".join([i + "%29%28%22%27" for i in new_body.split("&")])
+                        new_header[0]="&".join([i + "%29%28%22%27" for i in new_header[0][:-9].split("&")]) +" HTTP/1.1"
+                        #print new_header[0]
+                        #print new_body
+                    else:         #has post +body no get
+                        #print 'post +body no get'
+                        new_body="&".join([i + "%29%28%22%27" for i in new_body.split("&")])
+                        #print new_body
+                    req1 = self._helpers.buildHttpMessage(new_header, new_body)
+                    if Protocol == 'https':
+                        ishttps = True
+                    if not messageIsRequest:
+                    	
+                    	#xin response receive
+                        rep1 = self._callbacks.makeHttpRequest(host, port, ishttps, req1)
+                        
+                        
+                        #xin reqest init
+                        analyzedreq = self._helpers.analyzeResponse(req1)
+                        req_headers = analyzedreq.getHeaders()
+                        req_bodys = req1[analyzedreq.getBodyOffset():].tostring()
+                        #print req_headers
+                        
+                        #xin response init
+                        analyzedrep = self._helpers.analyzeResponse(rep1)
+                        rep_headers = analyzedrep.getHeaders()
+                        rep_bodys = rep1[analyzedrep.getBodyOffset():].tostring()
+                        rep_StatusCode = analyzedrep.getStatusCode()
+                        #print rep_StatusCode
+                        #print rep_headers
+                        #print req_headers[0]
+                        #print "========="
+                        #print req_bodys
+                        #print rep_headers
+                        #print rep_bodys
+                        ###################mysql####################
+                        mysql_error="You have an error in your SQL"
+                        #mysql_error1="mysql_fetch_array() expects parameter 1 to be resource"
+                        mysql_error1="mysql_fetch_array() expects"
+                        mysql_error2="boolean given in"
+                        mysql_error3="SQL Error"
+                        mysql_error4="Incorrect Syntax near"
+                        mysql_error5="Failed Mysql"
+                        mysql_error6="Unclosed Quotation Mark"
+                        mysql_error7=": Unknown column"
+                        mysql_error8="SQL/DB Error"
+                        
+                        if rep_StatusCode==500:
+                            print host+"==500=="+req_headers[0]+"==500=="+req_bodys
+                        else:
+                            ####################POST MySql####################
+                            if mysql_error in rep_bodys or mysql_error1 in rep_bodys or mysql_error2 in rep_bodys or mysql_error3 in rep_bodys or mysql_error4 in rep_bodys or mysql_error5 in rep_bodys or mysql_error6 in rep_bodys or mysql_error7 in rep_bodys or mysql_error8 in rep_bodys:
+                                print "===========POST mysql error injection=========="
+                                print host+"==="+req_headers[0]+"==="+req_bodys
+                                
+                            ####################POST sqlite####################
+                            if sqlite_error in rep_bodys or sqlite_error1 in rep_bodys or sqlite_error2 in rep_bodys or sqlite_error3 in rep_bodys:
+                                print "===========POST sqlite error injection=========="
+                                print host+"==="+req_headers[0]+"==="+req_bodys
+                                
+                            ####################POST psql####################
+                            if psql_error in rep_bodys:
+                                print "===========POST psql error injection=========="
+                                print host+"==="+req_headers[0]+"==="+req_bodys
+                                
+                            ####################POST IBM####################
+                            if ibm_error in rep_bodys or ibm_error1 in rep_bodys:
+                                print "===========POST ibm error injection=========="
+                                print host+"==="+req_headers[0]+"==="+req_bodys
+                            
+                            ####################POST mssql####################
+                            mssql_error="System.Data.SqlClient.SqlConnection.OnError"
+                            mssql_error1="System.Data.SqlClient.SqlException"
+                            mssql_error2="Microsoft OLE DB Provider"
+                            if mssql_error in rep_bodys or mssql_error1 in rep_bodys or mssql_error2 in rep_bodys:
+                                print "===========POST mssql error injection=========="
+                                print host+"==="+req_headers[0]+"==="+req_bodys
+                            	
+                            ####################POST oracle####################
+                            oracle_error="java.sql.SQLException"
+                            oracle_error1="System.Data.OleDb.OleDbException"
+                            oracle_error2="DB Provider for ODBC Drivers"
+                            oracle_error3="ORA-"
+                            oracle_error4="PLS-"
+                            oracle_error5="JDBC/ODBC Driver"
+                            oracle_error6="SQL command not properly"
+                            oracle_error7="hibernate.hql"
+                            oracle_error8="oracle.jdbc"
+                            if oracle_error in rep_bodys or oracle_error1 in rep_bodys or oracle_error2 in rep_bodys or oracle_error3 in rep_bodys or oracle_error4 in rep_bodys or oracle_error5 in rep_bodys or oracle_error6 in rep_bodys or oracle_error7 in rep_bodys or oracle_error8 in rep_bodys:
+                                print "===========POST oracle error injection=========="
+                                print host+"==="+req_headers[0]+"==="+req_bodys
+                                
+                #POST Body no result == GET
+                else:
+                    ############no post body#############  
+                    if new_header[0].count("=") != 0 :
+                        if new_header[0].count("&") == 0:
+                            new_header[0]= new_header[0].replace(" HTTP/1.1", "%29%28%22%27 HTTP/1.1")
+                            #print new_header[0]
+                        
+                        else:
+                           b= new_header[0].replace("&", "%29%28%22%27&")
+                           new_header[0]= b.replace(" HTTP/1.1", "%29%28%22%27 HTTP/1.1")
+                           #print new_header[0]
+                        req = self._helpers.buildHttpMessage(new_header, request_bodys) 
+                        #print new_header
+                    
+                        #Protocol judge
+                        #ishttps = False
+                        if Protocol == 'https':
+                            ishttps = True
+                        if not messageIsRequest:
+                    	
+                    	     #xin response receive
+                            rep = self._callbacks.makeHttpRequest(host, port, ishttps, req)
+                            #xin reqest init
+                            analyzedreq = self._helpers.analyzeResponse(req)
+                            req_headers = analyzedreq.getHeaders()
+                            req_bodys = req[analyzedreq.getBodyOffset():].tostring()
+                            #req_bodys = rep[analyzedreq.getBodyOffset():].tostring()
+                            #print req_headers
+                        
+                            #xin response init
+                            analyzedrep = self._helpers.analyzeResponse(rep)
+                            rep_headers = analyzedrep.getHeaders()
+                            rep_bodys = rep[analyzedrep.getBodyOffset():].tostring()
+                            rep_StatusCode = analyzedrep.getStatusCode()
+                            if rep_StatusCode==500:
+                                print host+"==500=="+req_headers[0]+"==500=="+req_bodys
+                            else:
+                                #print rep_headers
+                                ####################GET sqlite####################
+                                if sqlite_error in rep_bodys or sqlite_error1 in rep_bodys or sqlite_error2 in rep_bodys or sqlite_error3 in rep_bodys:
+                                    print "===========POST sqlite error injection=========="
+                                    print host+"==="+req_headers[0]+"==="+req_bodys
+                                
+                                
+                                ####################GET psql####################
+                                if psql_error in rep_bodys:
+                                    print "===========POST psql error injection=========="
+                                    print host+"==="+req_headers[0]+"==="+req_bodys
+                                
+                                ####################GET IBM####################
+                                if ibm_error in rep_bodys or ibm_error1 in rep_bodys:
+                                    print "===========POST ibm error injection=========="
+                                    print host+"==="+req_headers[0]+"==="+req_bodys
+                                    
+                                    
+                                ####################GET mysql####################
+                                mysql_error="You have an error in your SQL"
+                                #mysql_error1="mysql_fetch_array() expects parameter 1 to be resource"
+                                mysql_error1="mysql_fetch_array() expects"
+                                mysql_error2="boolean given in"
+                                mysql_error3="SQL Error"
+                                mysql_error4="Incorrect Syntax near"
+                                mysql_error5="Failed Mysql"
+                                mysql_error6="Unclosed Quotation Mark"
+                                mysql_error7=": Unknown column"
+                                mysql_error8="SQL/DB Error"
+                                if mysql_error in rep_bodys or mysql_error1 in rep_bodys or mysql_error2 in rep_bodys or mysql_error3 in rep_bodys or mysql_error4 in rep_bodys or mysql_error5 in rep_bodys or mysql_error6 in rep_bodys or mysql_error7 in rep_bodys or mysql_error8 in rep_bodys:
+                                    print "===========GET  mysql error injection=========="
+                                    print host+"==="+req_headers[0]
+
+                                ####################GET mssql####################
+                                mssql_error="System.Data.SqlClient.SqlConnection.OnError"
+                                mssql_error1="System.Data.SqlClient.SqlException"
+                                mssql_error2="Microsoft OLE DB Provider"
+                                
+                                if mssql_error in rep_bodys or mssql_error1 in rep_bodys or mssql_error2 in rep_bodys:
+                                    print "===========GET mssql error injection=========="
+                                    print host+"==="+req_headers[0]
+                            	
+                                ####################GET oracle####################
+                                oracle_error="java.sql.SQLException"
+                                oracle_error1="System.Data.OleDb.OleDbException"
+                                oracle_error2="DB Provider for ODBC Drivers"
+                                oracle_error3="ORA-"
+                                oracle_error4="PLS-"
+                                oracle_error5="JDBC/ODBC Driver"
+                                oracle_error6="SQL command not properly"
+                                oracle_error7="hibernate.hql"
+                                oracle_error8="oracle.jdbc"
+                                
+                                if oracle_error in rep_bodys or oracle_error1 in rep_bodys or oracle_error2 in rep_bodys or oracle_error3 in rep_bodys or oracle_error4 in rep_bodys or oracle_error5 in rep_bodys or oracle_error6 in rep_bodys or oracle_error7 in rep_bodys or oracle_error8 in rep_bodys:
+                                    print "===========GET oracle error injection=========="
+                                    print host+"==="+req_headers[0]
